@@ -1,0 +1,9 @@
+category,predicate,count
+attack_A1_replacement,r_catalog,6
+attack_A1_replacement,r_meta,12
+attack_A2_metadata/a_metadata_info,r_meta,18
+attack_A2_metadata/b_viewer_prefs,r_layer,18
+attack_A2_metadata/c_annotation_overlay,r_catalog,18
+attack_A2_metadata/d_ocg_toggle,r_catalog,18
+attack_A2_metadata/e_hide_and_replace,r_catalog,18
+attack_A3_scapy,r_semeq,18

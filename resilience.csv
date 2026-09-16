@@ -1,0 +1,16 @@
+active_validators,attack_files,detected,detection_at_survivor,detection_rate,quorum_met,scenario,sustained_availability,sustained_liveness,trials
+10,,,1.0,,True,R1_outage_k=0,1.0,,
+9,,,1.0,,True,R1_outage_k=1,1.0,,
+8,,,1.0,,True,R1_outage_k=2,1.0,,
+7,,,1.0,,True,R1_outage_k=3,1.0,,
+6,,,1.0,,False,R1_outage_k=4,0.0,,
+5,,,1.0,,False,R1_outage_k=5,0.0,,
+4,,,1.0,,False,R1_outage_k=6,0.0,,
+3,,,1.0,,False,R1_outage_k=7,0.0,,
+2,,,1.0,,False,R1_outage_k=8,0.0,,
+1,,,1.0,,False,R1_outage_k=9,0.0,,
+0,,,1.0,,False,R1_outage_k=10,0.0,,
+,,,,,,R2_partition_random,,0.6575,10000
+,18,18,,1.0,,R3_scapy_mitm_wire_flip,,,
+7,18,18,,1.0,True,R4_combined_crash=3_and_A3,,,
+,18,18,,1.0,,R5_mitm_incremental_A2b,,,

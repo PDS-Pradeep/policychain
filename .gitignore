@@ -1,0 +1,23 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# LaTeX manuscript sources and build artifacts (not part of the code/corpus/results release)
+*.tex
+*.cls
+*.bib
+*.sty
+*.bst
+*.ldf
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.synctex.gz
+output.pdf
+
+# OS / editor
+.DS_Store
+Thumbs.db
