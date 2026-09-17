@@ -3,7 +3,7 @@
 Reproducible test corpus for evaluating PDF integrity / policy-governance
 frameworks against three attack categories.
 
-## Regenerate
+## Regenerate the corpus
 
 ```powershell
 python -m pip install reportlab pypdf
@@ -11,6 +11,23 @@ python generate_corpus.py
 ```
 
 Deterministic (seed = `20260901`). Output goes to `./corpus`.
+
+## Full evaluation pipeline
+
+The corpus generator, detector, real Merkle-linked provenance ledger, and
+the RQ1/RQ3/RQ4 drivers are documented in
+[`ARCHITECTURE.md`](ARCHITECTURE.md). To run everything (the ledger uses
+Ed25519 signatures via `cryptography`):
+
+```powershell
+python -m pip install reportlab pypdf cryptography
+python generate_corpus.py     # corpus + manifest
+python detector.py            # results.csv, summary.csv, predicate_hits.csv
+python build_ledger.py        # real Merkle ledger: ledger.jsonl, ledger_root.txt
+python governance_sim.py      # governance.csv  (G2/G3 executed on the ledger)
+python benchmark.py           # bench.csv, bench_summary.csv
+python resilience_sim.py      # resilience.csv
+```
 
 ## Layout
 
@@ -34,10 +51,13 @@ corpus/
 ├── attack_A3_scapy/                      # 18  — byte-level content-stream tampering
 │   └── <class>/<same-filename>.pdf
 │
+├── benign_moddate/                       # 18  — legitimate /ModDate-only update
+│   └── <class>/<same-filename>.pdf       #      (negative case for false-rejection)
+│
 └── manifest.csv                          # sha256 + size + label for every file
 ```
 
-Total: **144 PDFs**.
+Total: **162 PDFs** — 18 baseline, 126 attack (A1 + A2 + A3), and 18 benign.
 
 ## Attack semantics (verified)
 
@@ -50,6 +70,7 @@ Total: **144 PDFs**.
 | A2.d | OCG toggle          | New optional-content group forced ON at default       | Yes (structural add only) |
 | A2.e | Hide-and-Replace    | Shadow page tree + catalog `/Pages` swap              | Yes                       |
 | A3   | Scapy byte-flip     | 16-byte XOR-0xA5 window inside first content stream   | No                        |
+| benign | ModDate update    | `/ModDate`-only incremental update (allowlisted)      | Yes (must be accepted)    |
 
 ## Expected detection outcomes
 
