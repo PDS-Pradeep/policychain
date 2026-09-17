@@ -129,20 +129,46 @@ def main() -> None:
     median_hash = statistics.median(r["hash_ms"] for r in per_file)
     median_sig  = statistics.median(r["sig_ms"] for r in per_file)
 
-    # Ledger commitment record: fingerprint json + sha256 + seq + timestamp
-    # + 10 validator signatures (Ed25519 = 64B each)
-    median_fp_bytes = statistics.median(r["finger_bytes"] for r in per_file)
-    ledger_record_bytes = int(median_fp_bytes + 32 + 8 + 8 + 10 * 64)
+    # -----------------------------------------------------------------
+    # REAL ledger commitment measurement (executed, not modelled).
+    # We build the actual Merkle-linked ledger (ledger.py) over the
+    # baseline fingerprints and measure per-block commit latency and the
+    # true serialized record size. This replaces the previously modelled
+    # ledger record size and BFT latency estimates.
+    # -----------------------------------------------------------------
+    from dataclasses import asdict as _asdict
+    from ledger import MerkleLedger, ValidatorSet
 
-    # Simulated BFT vote collection: each validator runs def_dpm once and
-    # emits a 64B Ed25519 signature. Wall-clock lower bound is the max of
-    # ten independent validations plus a small network fanout term.
-    # We assume perfectly parallel validators, so latency ≈ single
-    # validation + a 5ms round-trip.
-    l_bft_lb = median_dpm + 5.0
+    N_VAL, QUORUM = 10, 7
+    validators = ValidatorSet(N_VAL)
+    ledger = MerkleLedger(validators, quorum=QUORUM)
 
-    # Sequential (worst case): 10 * median_dpm + fanout
-    l_bft_ub = 10 * median_dpm + 5.0
+    commit_ms: list[float] = []
+    record_bytes: list[int] = []
+    for (cls, name), commit in commits.items():
+        t0 = time.perf_counter_ns()
+        blk = ledger.commit(commit["fingerprint_hash"], f"{cls}/{name}")
+        commit_ms.append((time.perf_counter_ns() - t0) / 1e6)
+        record_bytes.append(
+            len(json.dumps(_asdict(blk), separators=(",", ":")).encode())
+        )
+
+    # Measured single-node commit cost (parse+fingerprint already timed
+    # separately above; this is the ledger seal + k-signature step).
+    ledger_commit_median_ms = statistics.median(commit_ms)
+    ledger_record_bytes = int(statistics.median(record_bytes))
+
+    # Verify the built ledger really validates (executed integrity check).
+    chain_ok, _reason = ledger.verify()
+
+    # Consensus-round latency remains an ANALYTICAL estimate built on the
+    # measured per-commit cost: a genuine distributed BFT run would add
+    # inter-node network RTT that a single-machine build cannot measure.
+    # Parallel: one validation + one signed commit. Sequential upper bound:
+    # k serial commits. Network RTT is intentionally NOT added here — it is
+    # deployment-specific and reported as future work.
+    l_consensus_parallel = median_dpm + ledger_commit_median_ms
+    l_consensus_sequential = median_dpm + N_VAL * ledger_commit_median_ms
 
     with (ROOT / "bench_summary.csv").open("w", newline="",
                                             encoding="utf-8") as f:
@@ -163,9 +189,17 @@ def main() -> None:
                     "files/s"])
         w.writerow(["throughput_sig_fps", round(1000 / median_sig, 1),
                     "files/s"])
-        w.writerow(["ledger_record_bytes", ledger_record_bytes, "bytes"])
-        w.writerow(["bft_latency_parallel_ms", round(l_bft_lb, 2), "ms"])
-        w.writerow(["bft_latency_sequential_ms", round(l_bft_ub, 2), "ms"])
+        # Measured ledger metrics
+        w.writerow(["ledger_commit_median_ms",
+                    round(ledger_commit_median_ms, 4), "ms(measured)"])
+        w.writerow(["ledger_record_bytes", ledger_record_bytes,
+                    "bytes(measured)"])
+        w.writerow(["ledger_chain_verified", chain_ok, "bool(measured)"])
+        # Analytical consensus estimates built on the measured commit cost
+        w.writerow(["consensus_latency_parallel_ms",
+                    round(l_consensus_parallel, 2), "ms(estimate)"])
+        w.writerow(["consensus_latency_sequential_ms",
+                    round(l_consensus_sequential, 2), "ms(estimate)"])
 
     # Console
     print(f"{'metric':22s} {'mean':>8s} {'median':>8s} {'p95':>8s} "
@@ -176,12 +210,16 @@ def main() -> None:
         print(f"{row['metric']:22s} {row['mean']:>8.3f} {row['median']:>8.3f} "
               f"{row['p95']:>8.3f} {row['p99']:>8.3f} {unit:>4s}")
     print()
-    print(f"throughput DPM  : {1000/median_dpm:8.1f} files/s")
-    print(f"throughput Hash : {1000/median_hash:8.1f} files/s")
-    print(f"throughput Sig  : {1000/median_sig:8.1f} files/s")
-    print(f"ledger record   : {ledger_record_bytes} bytes / policy")
-    print(f"BFT parallel LB : {l_bft_lb:8.2f} ms  (10 validators, parallel)")
-    print(f"BFT sequential  : {l_bft_ub:8.2f} ms  (10 validators, sequential)")
+    print(f"throughput DPM   : {1000/median_dpm:8.1f} files/s")
+    print(f"throughput Hash  : {1000/median_hash:8.1f} files/s")
+    print(f"throughput Sig   : {1000/median_sig:8.1f} files/s")
+    print(f"ledger commit    : {ledger_commit_median_ms:8.4f} ms/block "
+          f"(measured, chain_verified={chain_ok})")
+    print(f"ledger record    : {ledger_record_bytes} bytes/block (measured)")
+    print(f"consensus par.   : {l_consensus_parallel:8.2f} ms  (estimate, "
+          f"10 validators, parallel, no network RTT)")
+    print(f"consensus seq.   : {l_consensus_sequential:8.2f} ms  (estimate, "
+          f"10 validators, sequential)")
 
 
 if __name__ == "__main__":

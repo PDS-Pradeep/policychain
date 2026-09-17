@@ -1,9 +1,9 @@
-attack,params,trials,detected_or_blocked,success_by_adversary,detection_rate
-G1_byzantine_push,|B|=0,10000,10000,0,1.0
-G1_byzantine_push,|B|=1,10000,10000,0,1.0
-G1_byzantine_push,|B|=2,10000,10000,0,1.0
-G1_byzantine_push,|B|=3,10000,10000,0,1.0
-G1_byzantine_push,|B|=4,10000,10000,0,1.0
-G2_silent_downgrade,audit=every-cycle,10000,10000,0,1.0
-G3_ledger_rewrite,one-bit-flip,10000,10000,0,1.0
-G4_conflicting_proposals,concurrent-fork,10000,10000,0,1.0
+attack,method,params,trials,detected_or_blocked,success_by_adversary,detection_rate
+G1_byzantine_push,model,|B|=0,10000,10000,0,1.0
+G1_byzantine_push,model,|B|=1,10000,10000,0,1.0
+G1_byzantine_push,model,|B|=2,10000,10000,0,1.0
+G1_byzantine_push,model,|B|=3,10000,10000,0,1.0
+G1_byzantine_push,model,|B|=4,10000,10000,0,1.0
+G2_silent_downgrade,executed_ledger,per-block forged fingerprint,18,18,0,1.0
+G3_ledger_rewrite,executed_ledger,per-block payload+signature tamper,36,36,0,1.0
+G4_conflicting_proposals,model,concurrent-fork,10000,10000,0,1.0

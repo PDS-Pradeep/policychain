@@ -97,15 +97,30 @@ def structural_fingerprint(reader: PdfReader) -> dict:
     return fp
 
 
+def fingerprint_hash(fp: dict) -> str:
+    """Stable SHA-256 over the canonicalised structural fingerprint.
+
+    Used as the value committed to the Merkle ledger (ledger.py). Canonical
+    JSON with sorted keys guarantees the same fingerprint yields the same
+    hash across runs and machines.
+    """
+    import json
+    canon = json.dumps(fp, sort_keys=True, separators=(",", ":"),
+                       default=str).encode()
+    return sha256(canon)
+
+
 def commit_baseline(path: Path) -> dict:
     data = path.read_bytes()
     reader = PdfReader(str(path))
+    fp = structural_fingerprint(reader)
     return {
         "path": path,
         "bytes": data,
         "size": len(data),
         "sha256": sha256(data),
-        "fingerprint": structural_fingerprint(reader),
+        "fingerprint": fp,
+        "fingerprint_hash": fingerprint_hash(fp),
     }
 
 

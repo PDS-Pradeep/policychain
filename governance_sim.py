@@ -1,37 +1,47 @@
 """
 RQ1 — Decentralised policy governance tamper resistance.
 
-Simulates a consortium of N=10 validators voting on policy proposals in a
-multi-organisational environment. An adversary controls a subset B of
-Byzantine validators and attempts to (a) push malicious policies through
-consensus and (b) silently downgrade or rewrite committed policies.
-
-Under PolicyChain's BFT model (approach.tex Sec. 5.3.3):
+A consortium of N=10 validators governs policy commitments. Under
+PolicyChain's model (approach.tex Sec. 5.3.3):
     quorum threshold T = 2f + 1  with  |N| >= 3f + 1
 For N=10 -> f=3, T=7.
 
-Simulated attacks:
-    G1  Byzantine-minority push:  |B| in {1..4} attempt to commit an
-        UNSAFE policy. Success iff  |B| >= T  (never for |B| <= f).
-    G2  Silent downgrade:         a Byzantine validator locally replaces
-        the active policy on its node without a ledger transaction.
-        Detection = ledger-vs-local hash mismatch on next audit.
-    G3  Ledger rewrite:           an adversary attempts to modify a
-        historical committed block ell_i. Detection = Merkle root
-        recomputation mismatch on any honest replica.
-    G4  Cross-org policy fork:    two organisations broadcast conflicting
-        policies simultaneously. Consensus resolves via BFT total order;
-        only one is committed.
+Two of the four attacks are now executed against the REAL Merkle-linked
+ledger (ledger.py); two remain analytical consensus models. This split is
+deliberate and reported honestly in the paper:
 
-We simulate 10,000 randomized trials per attack.
+    G1  Byzantine-minority push   [MODEL]  consensus voting arithmetic:
+        |B| in {0..4} attempt to commit an UNSAFE policy. Success iff
+        |B| >= T (never for |B| <= f). This is a model of BFT voting, not
+        a live distributed consensus run.
+
+    G2  Silent downgrade          [EXECUTED against real ledger]  a
+        compromised node locally replaces a committed block's fingerprint
+        without a valid re-signing / re-chaining. Detection = real
+        ledger.verify() over the tampered chain.
+
+    G3  Ledger rewrite            [EXECUTED against real ledger]  an
+        adversary mutates a historical committed block (payload or a
+        validator signature). Detection = real Merkle-root / hash-chain /
+        signature-quorum recomputation in ledger.verify().
+
+    G4  Cross-org policy fork     [MODEL]  two organisations broadcast
+        conflicting policies simultaneously; BFT total order must commit
+        at most one. This is a consensus model, not a live run.
+
+G1/G4 use 10,000 randomized trials. G2/G3 execute real tamper attempts
+against every block of the built ledger.
 """
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import random
 import secrets
 from pathlib import Path
+
+from ledger import MerkleLedger, ValidatorSet
 
 ROOT = Path(__file__).parent
 random.seed(20260901)
@@ -40,6 +50,7 @@ N = 10          # total validators
 F = 3           # tolerated Byzantine (floor((N-1)/3))
 T = 2 * F + 1   # quorum = 7
 TRIALS = 10_000
+LEDGER_FILE = ROOT / "ledger.jsonl"
 
 
 def sha(b: bytes) -> str:
@@ -66,42 +77,73 @@ def g1_byzantine_push(byz: int) -> tuple[int, int]:
     return committed, TRIALS - committed
 
 
+def _load_ledger() -> MerkleLedger:
+    if not LEDGER_FILE.exists():
+        raise SystemExit(
+            "ledger.jsonl not found — run `python build_ledger.py` first."
+        )
+    validators = ValidatorSet(N)
+    return MerkleLedger.load(LEDGER_FILE, validators, quorum=T)
+
+
 # --------------------------------------------------------------------------
-# G2 — Silent local downgrade
+# G2 — Silent local downgrade   [EXECUTED against the real ledger]
 # --------------------------------------------------------------------------
 def g2_silent_downgrade() -> tuple[int, int]:
     """
-    Adversary compromises one node and replaces its local active policy
-    (does NOT emit a ledger transaction).
-    Detection: any honest peer sampling the compromised node's active-
-    policy hash detects mismatch vs. ledger-committed hash.
-    Assume periodic audit (every trial = one audit).
+    Adversary compromises a node and silently replaces a committed block's
+    fingerprint with a downgraded/forged value, WITHOUT re-running consensus
+    (no fresh quorum signatures over the new header). We execute this tamper
+    against every block of the real ledger and run ledger.verify().
+    Detection = verify() reports a break. Returns (detected, missed).
     """
-    detected = 0
-    for _ in range(TRIALS):
-        # ledger hash != local hash after tamper -> deterministic detect
-        detected += 1
-    return detected, 0
+    base = _load_ledger()
+    detected = missed = 0
+    for i in range(len(base.blocks)):
+        led = _load_ledger()  # fresh clean copy
+        # silently swap in a forged fingerprint (no valid re-signing)
+        led.blocks[i].fingerprint = hashlib.sha256(
+            f"downgraded-policy-{i}".encode()
+        ).hexdigest()
+        ok, _reason = led.verify()
+        if not ok:
+            detected += 1
+        else:
+            missed += 1
+    return detected, missed
 
 
 # --------------------------------------------------------------------------
-# G3 — Historical ledger block rewrite
+# G3 — Historical ledger block rewrite   [EXECUTED against the real ledger]
 # --------------------------------------------------------------------------
 def g3_ledger_rewrite() -> tuple[int, int]:
     """
-    Attacker mutates the payload of an old block ell_i on their local
-    replica. Merkle root recomputation over the chain suffix produces a
-    mismatch on every honest replica.
+    Attacker mutates a historical committed block on their replica. We run
+    two concrete tamper families against every block: (a) payload mutation
+    and (b) forging/zeroing one validator signature. Each is checked with the
+    real ledger.verify() (hash-chain + Merkle-root + signature-quorum).
+    Returns (detected, missed) over all attempts.
     """
-    detected = 0
-    for _ in range(TRIALS):
-        original = secrets.token_bytes(256)
-        tampered = bytearray(original)
-        # flip one bit
-        i = random.randrange(len(tampered))
-        tampered[i] ^= 0x01
-        detected += 1 if sha(bytes(tampered)) != sha(original) else 0
-    return detected, 0
+    detected = missed = 0
+    n = len(_load_ledger().blocks)
+    for i in range(n):
+        # (a) payload mutation
+        led = _load_ledger()
+        led.blocks[i].fingerprint = hashlib.sha256(
+            f"rewrite-{i}".encode()
+        ).hexdigest()
+        ok_a, _ = led.verify()
+        detected += 1 if not ok_a else 0
+        missed += 1 if ok_a else 0
+
+        # (b) signature forgery on the same block
+        led2 = _load_ledger()
+        if led2.blocks[i].signatures:
+            led2.blocks[i].signatures[0] = "00" * 64
+            ok_b, _ = led2.verify()
+            detected += 1 if not ok_b else 0
+            missed += 1 if ok_b else 0
+    return detected, missed
 
 
 # --------------------------------------------------------------------------
@@ -140,11 +182,12 @@ def g4_conflicting_proposals() -> tuple[int, int, int]:
 def main() -> None:
     rows: list[dict] = []
 
-    # G1 across |B| = 0..4
+    # G1 across |B| = 0..4  [MODEL: BFT voting arithmetic]
     for byz in range(0, F + 2):  # 0..4 (f+1 = above-quorum threshold)
         committed, blocked = g1_byzantine_push(byz)
         rows.append({
             "attack": "G1_byzantine_push",
+            "method": "model",
             "params": f"|B|={byz}",
             "trials": TRIALS,
             "detected_or_blocked": blocked,
@@ -152,32 +195,37 @@ def main() -> None:
             "detection_rate": round(blocked / TRIALS, 6),
         })
 
-    # G2
+    # G2  [EXECUTED against real Merkle ledger]
     detected, missed = g2_silent_downgrade()
+    g2_trials = detected + missed
     rows.append({
         "attack": "G2_silent_downgrade",
-        "params": "audit=every-cycle",
-        "trials": TRIALS,
+        "method": "executed_ledger",
+        "params": "per-block forged fingerprint",
+        "trials": g2_trials,
         "detected_or_blocked": detected,
         "success_by_adversary": missed,
-        "detection_rate": round(detected / TRIALS, 6),
+        "detection_rate": round(detected / g2_trials, 6) if g2_trials else 0,
     })
 
-    # G3
+    # G3  [EXECUTED against real Merkle ledger]
     detected, missed = g3_ledger_rewrite()
+    g3_trials = detected + missed
     rows.append({
         "attack": "G3_ledger_rewrite",
-        "params": "one-bit-flip",
-        "trials": TRIALS,
+        "method": "executed_ledger",
+        "params": "per-block payload+signature tamper",
+        "trials": g3_trials,
         "detected_or_blocked": detected,
         "success_by_adversary": missed,
-        "detection_rate": round(detected / TRIALS, 6),
+        "detection_rate": round(detected / g3_trials, 6) if g3_trials else 0,
     })
 
-    # G4
+    # G4  [MODEL: BFT total-order]
     committed, divergence, stalled = g4_conflicting_proposals()
     rows.append({
         "attack": "G4_conflicting_proposals",
+        "method": "model",
         "params": "concurrent-fork",
         "trials": TRIALS,
         "detected_or_blocked": TRIALS - divergence,
@@ -191,11 +239,11 @@ def main() -> None:
         w.writeheader()
         w.writerows(rows)
 
-    print(f"{'attack':28s} {'params':22s} {'trials':>6s} "
+    print(f"{'attack':28s} {'method':16s} {'trials':>7s} "
           f"{'blocked':>8s} {'success':>8s} {'rate':>8s}")
     for r in rows:
-        print(f"{r['attack']:28s} {r['params']:22s} "
-              f"{r['trials']:6d} {r['detected_or_blocked']:8d} "
+        print(f"{r['attack']:28s} {r['method']:16s} "
+              f"{r['trials']:7d} {r['detected_or_blocked']:8d} "
               f"{r['success_by_adversary']:8d} "
               f"{r['detection_rate']:8.4f}")
 

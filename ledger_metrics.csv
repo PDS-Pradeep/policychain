@@ -1,0 +1,9 @@
+metric,value,unit
+blocks,18,count
+validators,10,count
+quorum,7,count
+commit_latency_median_ms,0.3479,ms
+commit_latency_mean_ms,0.3854,ms
+commit_latency_max_ms,0.6315,ms
+ledger_record_median_bytes,1343,bytes
+chain_verified,True,bool
