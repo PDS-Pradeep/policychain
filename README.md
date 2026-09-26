@@ -1,5 +1,9 @@
 [![DOI](https://sandbox.zenodo.org/badge/1372936366.svg)](https://sandbox.zenodo.org/badge/latestdoi/1372936366)
+# PolicyChain
 
+[![DOI](https://sandbox.zenodo.org/badge/1372936366.svg)](https://sandbox.zenodo.org/badge/latestdoi/1372936366)
+
+Provenance-Aware Verification Framework for Shadow-Document Attacks
 # PolicyChain PDF Attack Corpus
 
 Reproducible test corpus for evaluating PDF integrity / policy-governance
