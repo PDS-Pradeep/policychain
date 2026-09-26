@@ -1,4 +1,3 @@
-[![DOI](https://sandbox.zenodo.org/badge/1372936366.svg)](https://sandbox.zenodo.org/badge/latestdoi/1372936366)
 # PolicyChain
 
 [![DOI](https://sandbox.zenodo.org/badge/1372936366.svg)](https://sandbox.zenodo.org/badge/latestdoi/1372936366)
